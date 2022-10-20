@@ -1,219 +1,130 @@
-import type { ActionFunction, LinksFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Link, useActionData, useSearchParams } from "@remix-run/react";
+import type { Joke } from "@prisma/client";
+import type {
+  ActionFunction,
+  LoaderFunction,
+  MetaFunction,
+} from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import { Link, useCatch, useLoaderData, useParams } from "@remix-run/react";
 
-import stylesUrl from "~/styles/login.css";
 import { db } from "~/utils/db.server";
-import { createUserSession, login, register } from "~/utils/session.server";
+import { getUserId, requireUserId } from "~/utils/session.server";
 
-export const links: LinksFunction = () => {
-  return [{ rel: "stylesheet", href: stylesUrl }];
-};
-
-function validateUsername(username: unknown) {
-  if (typeof username !== "string" || username.length < 3) {
-    return `Usernames must be at least 3 characters long`;
+export const meta: MetaFunction = ({
+  data,
+}: {
+  data: LoaderData | undefined;
+}) => {
+  if (!data) {
+    return {
+      title: "No joke",
+      description: "No joke found",
+    };
   }
-}
-
-function validatePassword(password: unknown) {
-  if (typeof password !== "string" || password.length < 6) {
-    return `Passwords must be at least 6 characters long`;
-  }
-}
-
-function validateUrl(url: any) {
-  let urls = ["/jokes", "/", "https://remix.run"];
-  if (urls.includes(url)) {
-    return url;
-  }
-  return "/jokes";
-}
-
-type ActionData = {
-  formError?: string;
-  fieldErrors?: {
-    username: string | undefined;
-    password: string | undefined;
-  };
-  fields?: {
-    loginType: string;
-    username: string;
-    password: string;
+  return {
+    title: `"${data.joke.name}" joke`,
+    description: `Enjoy the "${data.joke.name}" joke and much more`,
   };
 };
 
-const badRequest = (data: ActionData) => json(data, { status: 400 });
+type LoaderData = { joke: Joke; isOwner: boolean };
 
-export const action: ActionFunction = async ({ request }) => {
-  const form = await request.formData();
-  const loginType = form.get("loginType");
-  const username = form.get("username");
-  const password = form.get("password");
-  const redirectTo = validateUrl(form.get("redirectTo") || "/jokes");
-  if (
-    typeof loginType !== "string" ||
-    typeof username !== "string" ||
-    typeof password !== "string" ||
-    typeof redirectTo !== "string"
-  ) {
-    return badRequest({
-      formError: `Form not submitted correctly.`,
+export const loader: LoaderFunction = async ({ request, params }) => {
+  const userId = await getUserId(request);
+  const joke = await db.joke.findUnique({
+    where: { id: params.jokeId },
+  });
+  if (!joke) {
+    throw new Response("What a joke! Not found.", {
+      status: 404,
     });
   }
-
-  const fields = { loginType, username, password };
-  const fieldErrors = {
-    username: validateUsername(username),
-    password: validatePassword(password),
+  const data: LoaderData = {
+    joke,
+    isOwner: userId === joke.jokesterId,
   };
-  if (Object.values(fieldErrors).some(Boolean))
-    return badRequest({ fieldErrors, fields });
-
-  switch (loginType) {
-    case "login": {
-      const user = await login({ username, password });
-      if (!user) {
-        return badRequest({
-          fields,
-          formError: `Username/Password combination is incorrect`,
-        });
-      }
-      return createUserSession(user.id, redirectTo);
-    }
-    case "register": {
-      const userExists = await db.user.findFirst({
-        where: { username },
-      });
-      if (userExists) {
-        return badRequest({
-          fields,
-          formError: `User with username ${username} already exists`,
-        });
-      }
-      const user = await register({ username, password });
-      if (!user) {
-        return badRequest({
-          fields,
-          formError: `Something went wrong trying to create a new user.`,
-        });
-      }
-      return createUserSession(user.id, redirectTo);
-    }
-    default: {
-      return badRequest({
-        fields,
-        formError: `Login type invalid`,
-      });
-    }
-  }
+  return json(data);
 };
 
-export default function Login() {
-  const actionData = useActionData<ActionData>();
-  const [searchParams] = useSearchParams();
+export const action: ActionFunction = async ({ request, params }) => {
+  const form = await request.formData();
+  if (form.get("_method") !== "delete") {
+    throw new Response(`The _method ${form.get("_method")} is not supported`, {
+      status: 400,
+    });
+  }
+  const userId = await requireUserId(request);
+  const joke = await db.joke.findUnique({
+    where: { id: params.jokeId },
+  });
+  if (!joke) {
+    throw new Response("Can't delete what does not exist", {
+      status: 404,
+    });
+  }
+  if (joke.jokesterId !== userId) {
+    throw new Response("Pssh, nice try. That's not your joke", {
+      status: 401,
+    });
+  }
+  await db.joke.delete({ where: { id: params.jokeId } });
+  return redirect("/jokes");
+};
+
+export default function JokeRoute() {
+  const data = useLoaderData<LoaderData>();
+
   return (
-    <div className="container">
-      <div className="content" data-light="">
-        <h1>Login</h1>
+    <div>
+      <p>Here's your hilarious joke:</p>
+      <p>{data.joke.content}</p>
+      <Link to=".">{data.joke.name} Permalink</Link>
+      {data.isOwner ? (
         <form method="post">
-          <input
-            type="hidden"
-            name="redirectTo"
-            value={searchParams.get("redirectTo") ?? undefined}
-          />
-          <fieldset>
-            <legend className="sr-only">Login or Register?</legend>
-            <label>
-              <input
-                type="radio"
-                name="loginType"
-                value="login"
-                defaultChecked={
-                  !actionData?.fields?.loginType ||
-                  actionData?.fields?.loginType === "login"
-                }
-              />{" "}
-              Login
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="loginType"
-                value="register"
-                defaultChecked={actionData?.fields?.loginType === "register"}
-              />{" "}
-              Register
-            </label>
-          </fieldset>
-          <div>
-            <label htmlFor="username-input">Username</label>
-            <input
-              type="text"
-              id="username-input"
-              name="username"
-              defaultValue={actionData?.fields?.username}
-              aria-invalid={Boolean(actionData?.fieldErrors?.username)}
-              aria-errormessage={
-                actionData?.fieldErrors?.username ? "username-error" : undefined
-              }
-            />
-            {actionData?.fieldErrors?.username ? (
-              <p
-                className="form-validation-error"
-                role="alert"
-                id="username-error"
-              >
-                {actionData.fieldErrors.username}
-              </p>
-            ) : null}
-          </div>
-          <div>
-            <label htmlFor="password-input">Password</label>
-            <input
-              id="password-input"
-              name="password"
-              defaultValue={actionData?.fields?.password}
-              type="password"
-              aria-invalid={
-                Boolean(actionData?.fieldErrors?.password) || undefined
-              }
-              aria-errormessage={
-                actionData?.fieldErrors?.password ? "password-error" : undefined
-              }
-            />
-            {actionData?.fieldErrors?.password ? (
-              <p
-                className="form-validation-error"
-                role="alert"
-                id="password-error"
-              >
-                {actionData.fieldErrors.password}
-              </p>
-            ) : null}
-          </div>
-          <div id="form-error-message">
-            {actionData?.formError ? (
-              <p className="form-validation-error" role="alert">
-                {actionData.formError}
-              </p>
-            ) : null}
-          </div>
+          <input type="hidden" name="_method" value="delete" />
           <button type="submit" className="button">
-            Submit
+            Delete
           </button>
         </form>
-      </div>
-      <div className="links">
-        <ul>
-          <li>
-            <Link to="/">Home</Link>
-          </li>
-          <li>
-            <Link to="/jokes">Jokes</Link>
-          </li>
-        </ul>
-      </div>
+      ) : null}
     </div>
+  );
+}
+
+export function CatchBoundary() {
+  const caught = useCatch();
+  const params = useParams();
+  switch (caught.status) {
+    case 400: {
+      return (
+        <div className="error-container">
+          What you're trying to do is not allowed.
+        </div>
+      );
+    }
+    case 404: {
+      return (
+        <div className="error-container">
+          Huh? What the heck is {params.jokeId}?
+        </div>
+      );
+    }
+    case 401: {
+      return (
+        <div className="error-container">
+          Sorry, but {params.jokeId} is not your joke.
+        </div>
+      );
+    }
+    default: {
+      throw new Error(`Unhandled error: ${caught.status}`);
+    }
+  }
+}
+
+export function ErrorBoundary() {
+  const { jokeId } = useParams();
+  return (
+    <div className="error-container">{`There was an error loading joke by the id ${jokeId}. Sorry.`}</div>
   );
 }
