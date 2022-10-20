@@ -204,3 +204,32 @@ export default function Sandwiches() {
   );
 }
 ```
+
+### Network type safety
+
+네트워크에서 가져온 데이터에 데에선 타입 단언 필요
+`jod`는 해당 작업을 도울 수 있음
+
+- URL 경로를 참조 /jokes/:jokeId
+- 파일 시스템 /app/routes/jokes/$jokeId.tsx 입니다.
+
+### Mutation
+
+로더와 마찬가지로 action은 데이터 변형 및 기타 작업을 처리하는 서버 전용 기능입니다.
+GET이 아닌 요청이 경로(POST, PUT, PATCH, DELETE)에 만들어지면 로더보다 먼저 액션이 호출됩니다.
+
+이를 통해 단일 경로 모듈에 데이터 셋에 대한 모든 것을 함께 배치할 수 있습니다.
+
+- 데이터 읽기,
+- 데이터를 렌더링하는 컴포넌트
+- 데이터 쓰기:
+
+URL에 POST가 수행되면 경로 계층 구조의 여러 경로가 URL과 일치합니다. UI를 빌드하기 위해 모두 호출되는 로더에 대한 GET과 달리 하나의 작업만 호출됩니다.
+
+액션 경로 > 경로의 액션
+/accounts?index > routes/accounts/index.js
+/accounts > routes/accounts.js
+
+### Authentication
+
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies
