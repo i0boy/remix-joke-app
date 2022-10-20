@@ -235,3 +235,8 @@ URL에 POST가 수행되면 경로 계층 구조의 여러 경로가 URL과 일�
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies
 - https://remix.run/docs/en/v1/tutorials/jokes#auth-flow-overview
 - [createCookieSessionStorage](https://remix.run/docs/en/v1/api/remix#createcookiesessionstorage)
+
+### Error
+
+- Errorboundary > 서버 에러
+- Catchboundary > 클라이언트 에러
